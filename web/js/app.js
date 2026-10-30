@@ -375,9 +375,7 @@ function setupUI() {
   window.addEventListener('echostage:quality', (e) => {
     const q = e.detail?.quality;
     updatePerfLabel(q);
-    if (String(e.detail?.reason || '').startsWith('fps') && state.playing) {
-      toast(`帧率偏低，已切换到${QUALITY_NAMES[q] || q}画质`);
-    }
+    if (e.detail?.reason === 'manual') toast(`画质：${QUALITY_NAMES[q] || q}`);
   });
   els.play.addEventListener('click', togglePlay);
   $('#btn-mv').addEventListener('click', () => toggleMv());
@@ -783,7 +781,7 @@ const QUALITY_NAMES = { high: '精细', medium: '均衡', low: '流畅' };
 
 function updatePerfLabel(q) {
   const el = $('#perf-mode');
-  if (el) el.textContent = `AUTO · ${QUALITY_NAMES[q] || q || '精细'}`;
+  if (el) el.textContent = `画质 · ${QUALITY_NAMES[q] || q || '精细'}`;
 }
 
 function updateHUD(t, activity, shot, opts = {}) {
@@ -904,31 +902,19 @@ function setupDrop() {
 /* ------------------------------------------------------------------ */
 
 let lastFrame = performance.now();
-let lastDraw = 0;
-let pacingAccum = 0;
 let hudTimer = 0;
 
 function loop(now) {
-  const raw = Math.min(0.1, Math.max(0.001, (now - lastFrame) / 1000));
+  const dt = Math.min(0.05, Math.max(0.001, (now - lastFrame) / 1000));
   lastFrame = now;
-  pacingAccum += raw;
 
   if (!state.stage || state.uiBusy || document.hidden) {
     requestAnimationFrame(loop);
     return;
   }
 
-  // 用累积器做帧率上限：165Hz / 144Hz 屏幕上也能稳定在约 60fps，而不是固定每 3 帧才画一次。
-  const interval = state.playing ? 1000 / 61 : 1000 / 31;
-  if (pacingAccum * 1000 < interval) {
-    requestAnimationFrame(loop);
-    return;
-  }
-
-  const dt = Math.min(0.05, Math.max(0.001, (now - lastDraw) / 1000));
-  pacingAccum = Math.min(pacingAccum - interval / 1000, interval / 1000);
-  lastDraw = now;
-
+  // 不做 60fps 上限：直接跟随显示器刷新率。
+  // 165Hz 屏幕上锁 60 会产生 16/33ms 交替的帧间隔，看起来反而更顿。
   const t = state.audio?.currentTime || 0;
   const levels = state.audio?.getLevels();
   const { shot, activity } = state.stage.update(t, dt, levels);

@@ -18,12 +18,14 @@ const RING_HOT = new THREE.Color('#ffd166');
 const SOFTWARE_RE = /swiftshader|llvmpipe|software|basic render|mesa offscreen/i;
 
 const QUALITY_PRESETS = {
-  high: { pixelBudget: 3_600_000, dprCap: 1.35, bloom: true, shadowEvery: 2, shadowSize: 1024, grain: 0.015 },
+  // 默认不压缩分辨率：high 使用设备原生 DPR（最多 2x）。
+  high: { pixelBudget: Infinity, dprCap: 2, bloom: true, shadowEvery: 2, shadowSize: 1024, grain: 0.015 },
   medium: { pixelBudget: 2_200_000, dprCap: 1.15, bloom: true, shadowEvery: 3, shadowSize: 512, grain: 0.008 },
   low: { pixelBudget: 1_400_000, dprCap: 0.9, bloom: false, shadowEvery: 0, shadowSize: 256, grain: 0.004 },
 };
 
 function targetPixelRatio(quality, width, height) {
+  if (quality === 'high') return Math.min(window.devicePixelRatio || 1, 2);
   const preset = QUALITY_PRESETS[quality] || QUALITY_PRESETS.high;
   const budgetDpr = Math.sqrt(preset.pixelBudget / Math.max(1, width * height));
   return Math.max(0.65, Math.min(window.devicePixelRatio || 1, preset.dprCap, budgetDpr));
@@ -304,20 +306,12 @@ export function createStage(canvas) {
   const rendererName = debugInfo ? String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || '') : '';
   const forcedQuality = new URLSearchParams(location.search).get('quality');
   const softwareRenderer = SOFTWARE_RE.test(rendererName);
-  const smallScreen = window.matchMedia?.('(max-width: 900px)').matches || false;
-  const lowCore = (navigator.hardwareConcurrency || 8) <= 4;
+  // 默认永远使用完整特效；只有显式 ?quality= 或软件渲染才降级。
   let quality = ['high', 'medium', 'low'].includes(forcedQuality)
     ? forcedQuality
     : softwareRenderer
       ? 'low'
-      : smallScreen || lowCore
-        ? 'medium'
-        : 'high';
-  let qualityChangedAt = performance.now();
-  let perfAccum = 0;
-  let perfFrames = 0;
-  let downgradeLocked = Boolean(forcedQuality);
-  let dprScale = 1;
+      : 'high';
 
   const initialW = canvas.clientWidth || 1280;
   const initialH = canvas.clientHeight || 800;
@@ -409,6 +403,7 @@ export function createStage(canvas) {
   let pausedEnergy = 0;
   let shadowTick = 0;
   let renderedFrames = 0;
+  const renderTimes = [];
 
   // 小部件不投影：减少阴影 pass 的 draw call，同时保留大件阴影
   const detailMeshes = [];
@@ -426,7 +421,7 @@ export function createStage(canvas) {
   function applyResize(force = false) {
     const w = canvas.clientWidth || 1280;
     const h = canvas.clientHeight || 800;
-    const dpr = Math.max(0.6, targetPixelRatio(quality, w, h) * dprScale);
+    const dpr = targetPixelRatio(quality, w, h);
     const targetW = Math.floor(w * dpr);
     const targetH = Math.floor(h * dpr);
     if (!force && canvas.width === targetW && canvas.height === targetH) {
@@ -438,16 +433,15 @@ export function createStage(canvas) {
     renderer.setSize(w, h, false);
     composer.setPixelRatio(dpr);
     composer.setSize(w, h);
-    // Bloom 内部用半分辨率，成本约降为 1/4；最终合成仍按全分辨率。
-    bloom.setSize(Math.max(1, Math.floor(targetW * 0.5)), Math.max(1, Math.floor(targetH * 0.5)));
+    // 默认 high 使用全分辨率 Bloom；只有手动 medium/low 才降为半分辨率。
+    const bloomScale = quality === 'high' ? 1 : 0.5;
+    bloom.setSize(Math.max(1, Math.floor(targetW * bloomScale)), Math.max(1, Math.floor(targetH * bloomScale)));
     film.uniforms.uRes.value.set(w, h);
   }
 
-  function setQuality(next, reason = 'auto') {
+  function setQuality(next, reason = 'manual') {
     if (!QUALITY_PRESETS[next] || next === quality) return;
     quality = next;
-    dprScale = 1;
-    qualityChangedAt = performance.now();
     const preset = QUALITY_PRESETS[next];
     bloom.enabled = preset.bloom;
     renderer.shadowMap.enabled = next === 'high';
@@ -474,31 +468,9 @@ export function createStage(canvas) {
     window.dispatchEvent(new CustomEvent('echostage:quality', { detail: { quality: next, reason } }));
   }
 
-  function trackPerformance(dt) {
-    if (downgradeLocked || performance.now() - qualityChangedAt < 3500) return;
-    perfAccum += dt;
-    perfFrames++;
-    if (perfAccum < 2) return;
-    const fps = perfFrames / perfAccum;
-    perfAccum = 0;
-    perfFrames = 0;
-    if (quality === 'high' && fps < 46) {
-      setQuality('medium', `fps=${fps.toFixed(0)}`);
-    } else if (quality === 'medium' && fps < 38) {
-      setQuality('low', `fps=${fps.toFixed(0)}`);
-    } else if (quality === 'low' && fps < 24) {
-      // 已经到最低档，进一步降低像素比；不再触发材质/灯光重建
-      dprScale = Math.max(0.65, dprScale * 0.85);
-      applyResize(true);
-      downgradeLocked = true;
-    }
-  }
-
   function update(time, dt, levels = null) {
     applyResize();
     dt = Math.min(0.05, Math.max(0.001, dt));
-    const advancing = time - lastTime > 0.002;
-    if (advancing) trackPerformance(dt);
     const hits = band.update(time, dt, levels);
     if (quality !== 'low') {
       for (const h of hits) sparks.spawn(h.pos, h.color, h.strength);
@@ -547,6 +519,8 @@ export function createStage(canvas) {
 
   function render() {
     renderedFrames++;
+    renderTimes.push(performance.now());
+    if (renderTimes.length > 900) renderTimes.shift();
     if (quality === 'low') {
       renderer.render(scene, camera);
     } else {
@@ -600,6 +574,20 @@ export function createStage(canvas) {
     rendererName,
     get quality() { return quality; },
     get frames() { return renderedFrames; },
+    frameStats(windowSize = 300) {
+      const times = renderTimes.slice(-windowSize - 1);
+      const intervals = [];
+      for (let i = 1; i < times.length; i++) intervals.push(times[i] - times[i - 1]);
+      intervals.sort((a, b) => a - b);
+      const pick = (p) => intervals[Math.min(intervals.length - 1, Math.floor(intervals.length * p))] || 0;
+      return {
+        samples: intervals.length,
+        p50: +pick(0.5).toFixed(2),
+        p95: +pick(0.95).toFixed(2),
+        max: +(intervals[intervals.length - 1] || 0).toFixed(2),
+        avg: +(intervals.reduce((s, v) => s + v, 0) / Math.max(1, intervals.length)).toFixed(2),
+      };
+    },
     focus(id) { director.focus(id); },
     setAuto(on) { director.setAuto(on); },
     get shot() { return director.shot; },
