@@ -370,7 +370,7 @@ function seekTo(t) {
 function setupUI() {
   updatePerfLabel(state.stage.quality);
   if (/swiftshader|llvmpipe|software/i.test(state.stage.rendererName || '')) {
-    setTimeout(() => toast('检测到软件渲染：建议在 Edge 设置中开启硬件加速'), 1400);
+    $('#render-warning').classList.add('open');
   }
   window.addEventListener('echostage:quality', (e) => {
     const q = e.detail?.quality;

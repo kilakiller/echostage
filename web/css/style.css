@@ -327,6 +327,19 @@ input[type="range"]::-moz-range-thumb { width: 9px; height: 9px; border-radius: 
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* ---------------- software render warning ---------------- */
+.render-warning {
+  position: absolute; z-index: 24; left: 50%; bottom: 104px; transform: translateX(-50%);
+  display: none; align-items: center; gap: 8px; max-width: min(680px, 90vw);
+  padding: 9px 14px; border: 1px solid rgba(255,179,71,0.5); border-radius: 10px;
+  background: rgba(38,25,12,0.96); color: #ffd9a3;
+  font-size: 10px; letter-spacing: 0.02em; line-height: 1.5;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+}
+.render-warning.open { display: flex; }
+.render-warning b { color: #ffb347; white-space: nowrap; }
+.render-warning span { color: #f4dfc4; }
+
 /* ---------------- export menu ---------------- */
 .export-menu {
   position: fixed; z-index: 45; top: 68px; right: 132px;
@@ -519,6 +532,7 @@ body.mv-mode .side-panel,
 body.mv-mode .transport,
 body.mv-mode .drop-hint,
 body.mv-mode .help,
+body.mv-mode .render-warning,
 body.mv-mode .stage-caption { opacity: 0; pointer-events: none; }
 body.mv-mode .mv-frame { opacity: 1; }
 body.mv-mode .viewport { display: grid; place-items: center; background: #000; }

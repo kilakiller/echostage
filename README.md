@@ -158,6 +158,16 @@ MusicStage3D/
 
 实测（Edge + RTX 4060 Laptop，1920×1080 CSS / 1.25 DPR）：**165fps，p95 6.4ms，无 console error**；2560×1440 下约 153fps。视觉效果与 High 档完整一致。
 
+### Edge 仍然卡顿？先看图形加速
+
+如果页面左下角出现「当前是软件渲染」提示，或者 `edge://gpu` 里 WebGL2 显示 `Software only`：
+
+1. 打开 **Edge 设置 → 系统和性能 → 使用图形加速（可用时）**，打开开关；
+2. **完全退出 Edge**（任务管理器里确认没有 `msedge.exe`），再重新打开；
+3. 访问 `edge://gpu`，确认 `WebGL2: Hardware accelerated`，且 `GL_RENDERER` 是 NVIDIA / AMD / Intel，而不是 `SwiftShader`。
+
+实测同一台笔记本：Edge 默认配置里 `hardware_acceleration_mode.enabled=false`，走的是 SwiftShader 软件渲染；联想浏览器则正常使用 RTX 4060 的 ANGLE D3D11。开启图形加速后，Edge 与联想浏览器都达到 165fps。
+
 ---
 
 ## 部署到 GitHub Pages
