@@ -584,6 +584,12 @@ function closePlaylist() {
 }
 
 async function checkCompanion() {
+  if (location.protocol === 'https:') {
+    state.companionOk = false;
+    els.companionDot.className = 'status-dot bad';
+    els.companions.textContent = '在线演示：歌单助手需在本地运行；可直接拖入本地音频';
+    return;
+  }
   try {
     const r = await fetch('http://127.0.0.1:8787/api/health', { signal: AbortSignal.timeout(1500) });
     if (!r.ok) throw new Error('bad status');
@@ -594,10 +600,7 @@ async function checkCompanion() {
   } catch {
     state.companionOk = false;
     els.companionDot.className = 'status-dot bad';
-    const online = location.protocol === 'https:';
-    els.companions.textContent = online
-      ? '在线演示：歌单助手需在本地运行；可直接拖入本地音频'
-      : '未检测到本地助手（127.0.0.1:8787）· 示例与本地音频仍可用';
+    els.companions.textContent = '未检测到本地助手（127.0.0.1:8787）· 示例与本地音频仍可用';
   }
 }
 
@@ -635,6 +638,10 @@ function renderDemoPlaylist() {
 }
 
 async function fetchPlaylist() {
+  if (location.protocol === 'https:') {
+    toast('在线版无法访问歌单助手；请本地运行完整版，或直接拖入音频');
+    return;
+  }
   const url = $('#playlist-url').value.trim();
   if (!url) { toast('先粘贴一个歌单链接'); return; }
   els.playlistCount.textContent = '读取中…';
@@ -686,6 +693,10 @@ function renderPlaylistTracks(data) {
 }
 
 async function loadPreview(track) {
+  if (location.protocol === 'https:') {
+    toast('在线版不支持平台试听代理；请本地运行歌单助手');
+    return;
+  }
   closePlaylist();
   if (state.playing) {
     state.audio.pause();

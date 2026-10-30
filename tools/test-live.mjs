@@ -1,0 +1,15 @@
+﻿import puppeteer from 'puppeteer-core';
+const b = await puppeteer.launch({executablePath:'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',headless:'new',args:['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader','--autoplay-policy=no-user-gesture-required','--hide-scrollbars'],defaultViewport:{width:1440,height:900}});
+const p = await b.newPage(); const errs=[];
+p.on('pageerror',e=>errs.push(e.message)); p.on('console',m=>{if(m.type()==='error')errs.push(m.text())});
+await p.goto('https://kilakiller.github.io/echostage/',{waitUntil:'domcontentloaded',timeout:60000});
+await p.waitForFunction('window.__ECHOSTAGE__?.state?.score',{timeout:45000});
+await new Promise(r=>setTimeout(r,1200));
+await p.click('#btn-play'); await new Promise(r=>setTimeout(r,1200));
+const info=await p.evaluate(()=>({title:document.title, tracks:window.__ECHOSTAGE__.state.score.tracks.length, playing:window.__ECHOSTAGE__.state.playing, t:window.__ECHOSTAGE__.state.audio.currentTime, canvas:[document.querySelector('#stage').width,document.querySelector('#stage').height]}));
+await p.click('#btn-play');
+await p.click('#btn-playlist'); await new Promise(r=>setTimeout(r,1800));
+const companion=await p.evaluate(()=>({text:document.querySelector('#companion-text').textContent, dot:document.querySelector('#companion-dot').className}));
+console.log({info,companion,errs:errs.length?errs:'none'});
+await p.screenshot({path:'docs/reference/live.png'});
+await b.close();
