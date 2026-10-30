@@ -14,6 +14,20 @@ import { createBand } from './instruments.js';
 import { createDirector } from './director.js';
 
 const ACCENT = new THREE.Color('#ff4f8b');
+const RING_HOT = new THREE.Color('#ffd166');
+const SOFTWARE_RE = /swiftshader|llvmpipe|software|basic render|mesa offscreen/i;
+
+const QUALITY_PRESETS = {
+  high: { pixelBudget: 3_600_000, dprCap: 1.35, bloom: true, shadowEvery: 2, shadowSize: 1024, grain: 0.015 },
+  medium: { pixelBudget: 2_200_000, dprCap: 1.15, bloom: true, shadowEvery: 3, shadowSize: 512, grain: 0.008 },
+  low: { pixelBudget: 1_400_000, dprCap: 0.9, bloom: false, shadowEvery: 0, shadowSize: 256, grain: 0.004 },
+};
+
+function targetPixelRatio(quality, width, height) {
+  const preset = QUALITY_PRESETS[quality] || QUALITY_PRESETS.high;
+  const budgetDpr = Math.sqrt(preset.pixelBudget / Math.max(1, width * height));
+  return Math.max(0.65, Math.min(window.devicePixelRatio || 1, preset.dprCap, budgetDpr));
+}
 
 const FilmShader = {
   uniforms: {
@@ -285,10 +299,34 @@ function buildDust(scene) {
 
 export function createStage(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-  renderer.setSize(canvas.clientWidth || 1280, canvas.clientHeight || 800, false);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const gl = renderer.getContext();
+  const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+  const rendererName = debugInfo ? String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || '') : '';
+  const forcedQuality = new URLSearchParams(location.search).get('quality');
+  const softwareRenderer = SOFTWARE_RE.test(rendererName);
+  const smallScreen = window.matchMedia?.('(max-width: 900px)').matches || false;
+  const lowCore = (navigator.hardwareConcurrency || 8) <= 4;
+  let quality = ['high', 'medium', 'low'].includes(forcedQuality)
+    ? forcedQuality
+    : softwareRenderer
+      ? 'low'
+      : smallScreen || lowCore
+        ? 'medium'
+        : 'high';
+  let qualityChangedAt = performance.now();
+  let perfAccum = 0;
+  let perfFrames = 0;
+  let downgradeLocked = Boolean(forcedQuality);
+  let dprScale = 1;
+
+  const initialW = canvas.clientWidth || 1280;
+  const initialH = canvas.clientHeight || 800;
+  renderer.setPixelRatio(targetPixelRatio(quality, initialW, initialH));
+  renderer.setSize(initialW, initialH, false);
+  renderer.shadowMap.enabled = quality === 'high';
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
+  renderer.shadowMap.type = quality === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.86;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -317,8 +355,8 @@ export function createStage(canvas) {
   const key = new THREE.SpotLight(0xfff2df, 130, 34, 0.62, 0.9, 2);
   key.position.set(0.5, 10, 8);
   key.target.position.set(0, 1.2, -0.5);
-  key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
+  key.castShadow = quality === 'high';
+  key.shadow.mapSize.set(QUALITY_PRESETS[quality].shadowSize, QUALITY_PRESETS[quality].shadowSize);
   key.shadow.bias = -0.0004;
   key.shadow.camera.near = 2;
   key.shadow.camera.far = 30;
@@ -349,16 +387,18 @@ export function createStage(canvas) {
 
   // 后期
   const composer = new EffectComposer(renderer);
-  composer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  composer.setPixelRatio(renderer.getPixelRatio());
   const renderPass = new RenderPass(scene, camera);
   composer.addPass(renderPass);
   const bloom = new UnrealBloomPass(
-    new THREE.Vector2(canvas.clientWidth || 1280, canvas.clientHeight || 800),
+    new THREE.Vector2(initialW * 0.5, initialH * 0.5),
     0.2, 0.4, 1.02,
   );
+  bloom.enabled = QUALITY_PRESETS[quality].bloom;
   composer.addPass(bloom);
   const film = new ShaderPass(FilmShader);
-  film.uniforms.uRes.value.set(canvas.clientWidth || 1280, canvas.clientHeight || 800);
+  film.uniforms.uRes.value.set(initialW, initialH);
+  film.uniforms.uGrain.value = QUALITY_PRESETS[quality].grain;
   composer.addPass(film);
   const output = new OutputPass();
   composer.addPass(output);
@@ -366,27 +406,103 @@ export function createStage(canvas) {
   const director = createDirector(camera, canvas, band.positions);
   let score = null;
   let lastTime = -1;
-  let quality = 'high';
   let pausedEnergy = 0;
+  let shadowTick = 0;
+  let renderedFrames = 0;
 
-  function applyResize() {
+  // 小部件不投影：减少阴影 pass 的 draw call，同时保留大件阴影
+  const detailMeshes = [];
+  band.root.traverse((obj) => {
+    if (!obj.isMesh) return;
+    if (obj.userData.detail) detailMeshes.push(obj);
+    obj.geometry.computeBoundingSphere?.();
+    const radius = obj.geometry.boundingSphere?.radius || 0;
+    if (radius < 0.085) obj.castShadow = false;
+  });
+  function setDetailVisible(visible) {
+    for (const mesh of detailMeshes) mesh.visible = visible;
+  }
+
+  function applyResize(force = false) {
     const w = canvas.clientWidth || 1280;
     const h = canvas.clientHeight || 800;
-    if (canvas.width === Math.floor(w * renderer.getPixelRatio()) && canvas.height === Math.floor(h * renderer.getPixelRatio())) {
+    const dpr = Math.max(0.6, targetPixelRatio(quality, w, h) * dprScale);
+    const targetW = Math.floor(w * dpr);
+    const targetH = Math.floor(h * dpr);
+    if (!force && canvas.width === targetW && canvas.height === targetH) {
       return;
     }
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    renderer.setPixelRatio(dpr);
     renderer.setSize(w, h, false);
+    composer.setPixelRatio(dpr);
     composer.setSize(w, h);
+    // Bloom 内部用半分辨率，成本约降为 1/4；最终合成仍按全分辨率。
+    bloom.setSize(Math.max(1, Math.floor(targetW * 0.5)), Math.max(1, Math.floor(targetH * 0.5)));
     film.uniforms.uRes.value.set(w, h);
+  }
+
+  function setQuality(next, reason = 'auto') {
+    if (!QUALITY_PRESETS[next] || next === quality) return;
+    quality = next;
+    dprScale = 1;
+    qualityChangedAt = performance.now();
+    const preset = QUALITY_PRESETS[next];
+    bloom.enabled = preset.bloom;
+    renderer.shadowMap.enabled = next === 'high';
+    key.castShadow = next === 'high';
+    renderer.shadowMap.type = next === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    key.shadow.mapSize.set(preset.shadowSize, preset.shadowSize);
+    if (key.shadow.map) {
+      key.shadow.map.dispose();
+      key.shadow.map = null;
+    }
+    for (const light of practicals) light.visible = next !== 'low';
+    rimL.visible = next !== 'low';
+    rimR.visible = next !== 'low';
+    back.visible = next !== 'low';
+    for (const light of band.extras.lights) light.beam.visible = next !== 'low';
+    dust.visible = next !== 'low';
+    setDetailVisible(next !== 'low');
+    film.uniforms.uGrain.value = preset.grain;
+    document.body.classList.toggle('perf-low', next === 'low');
+    document.body.classList.toggle('perf-medium', next === 'medium');
+    shadowTick = 0;
+    renderer.shadowMap.needsUpdate = true;
+    applyResize(true);
+    window.dispatchEvent(new CustomEvent('echostage:quality', { detail: { quality: next, reason } }));
+  }
+
+  function trackPerformance(dt) {
+    if (downgradeLocked || performance.now() - qualityChangedAt < 3500) return;
+    perfAccum += dt;
+    perfFrames++;
+    if (perfAccum < 2) return;
+    const fps = perfFrames / perfAccum;
+    perfAccum = 0;
+    perfFrames = 0;
+    if (quality === 'high' && fps < 46) {
+      setQuality('medium', `fps=${fps.toFixed(0)}`);
+    } else if (quality === 'medium' && fps < 38) {
+      setQuality('low', `fps=${fps.toFixed(0)}`);
+    } else if (quality === 'low' && fps < 24) {
+      // 已经到最低档，进一步降低像素比；不再触发材质/灯光重建
+      dprScale = Math.max(0.65, dprScale * 0.85);
+      applyResize(true);
+      downgradeLocked = true;
+    }
   }
 
   function update(time, dt, levels = null) {
     applyResize();
     dt = Math.min(0.05, Math.max(0.001, dt));
+    const advancing = time - lastTime > 0.002;
+    if (advancing) trackPerformance(dt);
     const hits = band.update(time, dt, levels);
-    for (const h of hits) sparks.spawn(h.pos, h.color, h.strength);
+    if (quality !== 'low') {
+      for (const h of hits) sparks.spawn(h.pos, h.color, h.strength);
+    }
     sparks.update(dt);
 
     const activities = ['drums', 'bass', 'guitar', 'keys', 'lead'].map((id) => band.getActivity(id));
@@ -405,7 +521,7 @@ export function createStage(canvas) {
         beam.beamMat.uniforms.uOpacity.value += (targetOpacity - beam.beamMat.uniforms.uOpacity.value) * (1 - Math.exp(-dt * 3));
       }
     }
-    room.ringMat.color.copy(ACCENT).lerp(new THREE.Color('#ffd166'), Math.min(0.6, activity * 0.5));
+    room.ringMat.color.copy(ACCENT).lerp(RING_HOT, Math.min(0.6, activity * 0.5));
     room.ring.scale.setScalar(1 + activity * 0.012);
     room.innerRingMat.opacity = 0.06 + activity * 0.14;
     for (let i = 0; i < room.pools.length; i++) {
@@ -430,9 +546,16 @@ export function createStage(canvas) {
   }
 
   function render() {
+    renderedFrames++;
     if (quality === 'low') {
       renderer.render(scene, camera);
     } else {
+      if (quality === 'high') {
+        renderer.shadowMap.needsUpdate = (shadowTick % 2 === 0);
+        shadowTick++;
+      } else {
+        renderer.shadowMap.needsUpdate = false;
+      }
       composer.render();
     }
   }
@@ -455,16 +578,28 @@ export function createStage(canvas) {
   }
 
   function resize() {
-    applyResize();
+    applyResize(true);
   }
+
+  applyResize(true);
+  if (quality === 'low') {
+    for (const light of practicals) light.visible = false;
+    rimL.visible = false;
+    rimR.visible = false;
+    back.visible = false;
+    for (const light of band.extras.lights) light.beam.visible = false;
+    dust.visible = false;
+    setDetailVisible(false);
+  }
+  document.body.classList.toggle('perf-low', quality === 'low');
+  document.body.classList.toggle('perf-medium', quality === 'medium');
 
   return {
     canvas, scene, camera, renderer, composer, band, director, sparks,
-    setScore, update, render, resize, warmUp,
-    setQuality(q) {
-      quality = q;
-      bloom.enabled = q !== 'low';
-    },
+    setScore, update, render, resize, warmUp, setQuality,
+    rendererName,
+    get quality() { return quality; },
+    get frames() { return renderedFrames; },
     focus(id) { director.focus(id); },
     setAuto(on) { director.setAuto(on); },
     get shot() { return director.shot; },

@@ -31,6 +31,7 @@ const state = {
   rows: new Map(),
   draggingProgress: false,
   suppressCards: false,
+  uiBusy: false,
   startTime: Number.isFinite(parseFloat(params.get('t'))) ? parseFloat(params.get('t')) : 0,
 };
 
@@ -367,6 +368,14 @@ function seekTo(t) {
 /* ------------------------------------------------------------------ */
 
 function setupUI() {
+  updatePerfLabel(state.stage.quality);
+  window.addEventListener('echostage:quality', (e) => {
+    const q = e.detail?.quality;
+    updatePerfLabel(q);
+    if (String(e.detail?.reason || '').startsWith('fps') && state.playing) {
+      toast(`帧率偏低，已切换到${QUALITY_NAMES[q] || q}画质`);
+    }
+  });
   els.play.addEventListener('click', togglePlay);
   $('#btn-mv').addEventListener('click', () => toggleMv());
   $('#btn-playlist').addEventListener('click', () => openPlaylist());
@@ -545,6 +554,7 @@ function downmix(left, right) {
 }
 
 function showAnalyzing(title, msg = '') {
+  state.uiBusy = true;
   els.analyzingTitle.textContent = title;
   els.analyzingMsg.textContent = msg;
   setAnalyzeProgress(0, msg);
@@ -552,7 +562,9 @@ function showAnalyzing(title, msg = '') {
 }
 
 function hideAnalyzing() {
+  state.uiBusy = false;
   els.analyzing.classList.remove('open');
+  if (state.score && state.playing) state.stage?.warmUp(state.audio?.currentTime || 0);
 }
 
 function setAnalyzeProgress(p, msg) {
@@ -569,6 +581,7 @@ function setAnalyzeProgress(p, msg) {
 /* ------------------------------------------------------------------ */
 
 function openPlaylist(tab) {
+  state.uiBusy = true;
   els.modal.classList.add('open');
   checkCompanion();
   if (tab === 'local') {
@@ -581,6 +594,8 @@ function openPlaylist(tab) {
 
 function closePlaylist() {
   els.modal.classList.remove('open');
+  state.uiBusy = false;
+  if (state.score && state.playing) state.stage?.warmUp(state.audio?.currentTime || 0);
 }
 
 async function checkCompanion() {
@@ -761,6 +776,13 @@ const DRUM_LABELS = {
   kick: '底鼓', snare: '军鼓', hat: '闭镲', openhat: '开镲', crash: '吊镲', ride: '叮叮镲', tom: '嗵鼓',
 };
 
+const QUALITY_NAMES = { high: '精细', medium: '均衡', low: '流畅' };
+
+function updatePerfLabel(q) {
+  const el = $('#perf-mode');
+  if (el) el.textContent = `AUTO · ${QUALITY_NAMES[q] || q || '精细'}`;
+}
+
 function updateHUD(t, activity, shot, opts = {}) {
   const score = state.score;
   if (!score) return;
@@ -879,21 +901,39 @@ function setupDrop() {
 /* ------------------------------------------------------------------ */
 
 let lastFrame = performance.now();
+let lastDraw = 0;
+let pacingAccum = 0;
 let hudTimer = 0;
 
 function loop(now) {
-  const dt = Math.min(0.05, Math.max(0.001, (now - lastFrame) / 1000));
+  const raw = Math.min(0.1, Math.max(0.001, (now - lastFrame) / 1000));
   lastFrame = now;
-  if (state.stage) {
-    const t = state.audio?.currentTime || 0;
-    const levels = state.audio?.getLevels();
-    const { shot, activity } = state.stage.update(t, dt, levels);
-    state.stage.render();
-    hudTimer += dt;
-    if (hudTimer > 0.09) {
-      updateHUD(t, activity, shot);
-      hudTimer = 0;
-    }
+  pacingAccum += raw;
+
+  if (!state.stage || state.uiBusy || document.hidden) {
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  // 用累积器做帧率上限：165Hz / 144Hz 屏幕上也能稳定在约 60fps，而不是固定每 3 帧才画一次。
+  const interval = state.playing ? 1000 / 61 : 1000 / 31;
+  if (pacingAccum * 1000 < interval) {
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  const dt = Math.min(0.05, Math.max(0.001, (now - lastDraw) / 1000));
+  pacingAccum = Math.min(pacingAccum - interval / 1000, interval / 1000);
+  lastDraw = now;
+
+  const t = state.audio?.currentTime || 0;
+  const levels = state.audio?.getLevels();
+  const { shot, activity } = state.stage.update(t, dt, levels);
+  state.stage.render();
+  hudTimer += dt;
+  if (hudTimer > 0.09) {
+    updateHUD(t, activity, shot);
+    hudTimer = 0;
   }
   requestAnimationFrame(loop);
 }

@@ -243,6 +243,7 @@ function buildDrumKit() {
       const a = (i / 6) * TAU;
       const lug = rounded(0.035, 0.06, 0.035, 0.008, darkMetal());
       lug.position.set(Math.cos(a) * r * 0.98, 0, Math.sin(a) * r * 0.98);
+      lug.userData.detail = true;
       g.add(lug);
     }
     // 支架
@@ -392,7 +393,7 @@ function buildDrumKit() {
       const e = env(p, 11);
       const head = heads[p];
       head.scale.set(1 + e * 0.025, 1 + e * 0.025, 1);
-      head.material.emissive = new THREE.Color(0x000000);
+      head.material.emissive.setHex(0x000000);
       head.material.emissiveIntensity = e * 0.4;
     }
     // 踩镲开合
@@ -486,6 +487,8 @@ function buildGuitar(opts) {
   } = opts;
   const group = new THREE.Group();
   const bodyMat = paint(color, { metalness: 0.18, roughness: 0.32 });
+  bodyMat.emissive = new THREE.Color(opts.sparkColor || C.pink);
+  bodyMat.emissiveIntensity = 0;
   const neckMat = std(0xb98a5a, { roughness: 0.55 });
   const fretMat = std(0x2a2522, { roughness: 0.7 });
   const boardMat = std(0x3b2b25, { roughness: 0.85 });
@@ -524,6 +527,7 @@ function buildGuitar(opts) {
     const y = stringEnd - frac * (stringEnd - stringStart - 0.04) - 0.02;
     const fret = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.003, 0.004), std(0xd8d3c8, { metalness: 0.9, roughness: 0.3 }));
     fret.position.set(0, y, 0.051);
+    fret.userData.detail = true;
     group.add(fret);
   }
   // 品位点
@@ -532,6 +536,7 @@ function buildGuitar(opts) {
     const y = stringEnd - frac * (stringEnd - stringStart - 0.04) - 0.02;
     const dot = new THREE.Mesh(new THREE.CircleGeometry(0.008, 12), std(0xf0e7d6));
     dot.position.set(0, y, 0.057);
+    dot.userData.detail = true;
     group.add(dot);
   }
 
@@ -545,6 +550,7 @@ function buildGuitar(opts) {
     const tuner = cyl(0.012, 0.012, 0.035, chrome(), 12);
     tuner.rotation.z = Math.PI / 2;
     tuner.position.set(x * 1.2, stringEnd + 0.05, 0.035);
+    tuner.userData.detail = true;
     group.add(tuner);
   }
 
@@ -570,6 +576,7 @@ function buildGuitar(opts) {
     const knob = cyl(0.018, 0.018, 0.014, std(0x191a1c, { roughness: 0.4 }), 16);
     knob.position.set(0.09 + (i % 2) * 0.045, bodyY - 0.13 - Math.floor(i / 2) * 0.05, 0.072);
     knob.rotation.x = Math.PI / 2;
+    knob.userData.detail = true;
     group.add(knob);
   }
   // 拨片扫弦光
@@ -677,7 +684,6 @@ function buildGuitar(opts) {
       pick.position.x = -0.04 + Math.min(1, age / 0.09) * 0.08;
     }
     state.bodyMat.emissiveIntensity = state.activity * 0.08;
-    state.bodyMat.emissive = new THREE.Color(opts.sparkColor || C.pink);
     return state.hits.splice(0);
   }
 
@@ -765,6 +771,7 @@ function buildKeyboard() {
     const knob = cyl(0.014, 0.014, 0.02, darkMetal(), 12);
     knob.rotation.x = Math.PI / 2;
     knob.position.set(0.15 + i * 0.055, 1.5, 0.02);
+    knob.userData.detail = true;
     group.add(knob);
   }
 
@@ -816,13 +823,13 @@ function buildKeyboard() {
     for (const [midi, key] of state.tiers[0].keys) {
       const v = state.press.get(midi) || 0;
       key.pivot.rotation.x = v * 0.085;
-      key.mesh.material.emissive = new THREE.Color(C.mint);
+      key.mesh.material.emissive.setHex(C.mint);
       key.mesh.material.emissiveIntensity = v * 0.6;
     }
     for (const [midi, key] of state.tiers[1].keys) {
       const v = state.press.get(midi) || 0;
       key.pivot.rotation.x = v * 0.075;
-      key.mesh.material.emissive = new THREE.Color(C.mint);
+      key.mesh.material.emissive.setHex(C.mint);
       key.mesh.material.emissiveIntensity = v * 0.35;
     }
     labels.material.opacity = 0.55 + state.activity * 0.4;
@@ -1082,6 +1089,7 @@ function buildAmp(color = 0x2c2d31) {
     const knob = cyl(0.02, 0.02, 0.02, darkMetal(), 12);
     knob.rotation.x = Math.PI / 2;
     knob.position.set(-0.25 + i * 0.12, 0.66, 0.225);
+    knob.userData.detail = true;
     group.add(knob);
   }
   const led = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff4f8b }));
