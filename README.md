@@ -153,6 +153,7 @@ MusicStage3D/
 - **减少 compositor 开销**：移除侧栏/播放条上的全屏 `backdrop-filter`，降低颗粒叠加与混合模式。
 - **暂停渲染**：打开歌单弹窗、分析遮罩时暂停 3D 渲染，关闭时用 `warmUp` 追帧。
 - 手动强制画质：`?quality=low` / `?quality=medium` / `?quality=high`。
+- 若检测到 SwiftShader / 软件渲染，会提示在 Edge 设置中开启硬件加速。
 
 实测（Edge + RTX 4060 Laptop，1920×1080 CSS / 1.25 DPR）：**High 约 61fps**，无 console error；165Hz 屏幕上也不再掉到 55fps。
 
