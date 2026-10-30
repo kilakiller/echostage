@@ -1,0 +1,3 @@
+# EchoStage
+
+Initializing repository...
