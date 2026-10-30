@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b0c0e" />
+  <title>EchoStage · 回响舞台</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2316171a'/%3E%3Ccircle cx='32' cy='32' r='17' fill='none' stroke='%23ff4f8b' stroke-width='3'/%3E%3Cpath d='M24 32h16M32 24v16' stroke='%23f0e7d6' stroke-width='3'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./css/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three.module.js",
+        "three/addons/": "./vendor/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <div class="viewport" id="viewport">
+      <canvas id="stage"></canvas>
+      <div class="stage-vignette"></div>
+      <div class="stage-grain"></div>
+    </div>
+
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">ECHO<span>/</span>STAGE</div>
+        <div class="brand-sub">音乐解构 · 3D 乐器演出</div>
+      </div>
+
+      <div class="now-playing">
+        <div class="np-title" id="np-title">复制之夜 · Copy Night</div>
+        <div class="np-artist" id="np-artist">EchoStage Studio</div>
+        <div class="np-chips">
+          <span class="chip chip-source" id="np-source">内置原创示例</span>
+          <span class="chip" id="np-bpm">120 BPM</span>
+          <span class="chip" id="np-key">A minor</span>
+          <span class="chip chip-quality" id="np-quality">原谱</span>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <button class="btn" id="btn-playlist" title="从音乐平台导入歌单">
+          <span class="ico">☰</span> 歌单
+        </button>
+        <button class="btn" id="btn-export" title="导出乐谱 / MIDI">
+          <span class="ico">↧</span> 导出
+        </button>
+        <button class="btn btn-ghost" id="btn-mv" title="隐藏界面，进入 4:3 MV 模式">
+          <span class="ico">▣</span> MV
+        </button>
+      </div>
+    </header>
+
+    <aside class="side-panel" id="side-panel">
+      <div class="panel-head">
+        <span>BAND / 声部</span>
+        <span class="panel-hint" id="panel-hint">5 TRACKS</span>
+      </div>
+      <div class="band-list" id="band-list"></div>
+
+      <div class="now-card">
+        <div class="now-card-head">
+          <span>NOW / 当前</span>
+          <span id="now-section">INTRO</span>
+        </div>
+        <div class="now-chord" id="now-chord">Am</div>
+        <div class="now-notes" id="now-notes">A3 · C4 · E4</div>
+        <div class="fx-tags" id="fx-tags"></div>
+        <div class="meter">
+          <span class="meter-label">ENERGY</span>
+          <div class="meter-bar"><i id="energy-fill"></i></div>
+        </div>
+      </div>
+
+      <div class="side-foot">
+        <button class="mini-btn" id="btn-director">导演运镜 · ON</button>
+        <button class="mini-btn" id="btn-analyze-demo">用分析器重跑</button>
+      </div>
+    </aside>
+
+    <div class="stage-caption">
+      <span class="caption-dot"></span>
+      <span id="shot-name">WIDE SHOT</span>
+      <span class="caption-sep">/</span>
+      <span id="caption-track">LIVE 3D SESSION</span>
+    </div>
+
+    <div class="drop-hint" id="drop-hint">
+      <b>拖入一首歌</b>
+      <span>MP3 / WAV / FLAC / M4A · 或点击导入歌单</span>
+    </div>
+
+    <footer class="transport">
+      <button class="play-btn" id="btn-play" aria-label="播放">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path id="play-icon" d="M8 5v14l11-7z" fill="currentColor"/></svg>
+      </button>
+      <div class="time-read">
+        <span id="time-now">0:00</span>
+        <span class="time-total" id="time-total">/ 0:32</span>
+      </div>
+      <div class="progress" id="progress">
+        <div class="progress-sections" id="progress-sections"></div>
+        <div class="progress-rail"></div>
+        <div class="progress-fill" id="progress-fill"></div>
+        <div class="progress-head" id="progress-head"></div>
+      </div>
+      <div class="transport-meta">
+        <span class="tempo" id="tempo-label">120</span><span class="tempo-unit">BPM</span>
+        <span class="divider"></span>
+        <span id="meter-label">A minor</span>
+      </div>
+      <div class="volume-wrap">
+        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M16 8.5a4.5 4.5 0 010 7" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+        <input type="range" id="volume" min="0" max="100" value="82" />
+      </div>
+    </footer>
+
+    <div class="type-card" id="type-card">
+      <div class="type-small" id="type-small">SECTION 01</div>
+      <div class="type-big" id="type-big">COPY</div>
+      <div class="type-cn" id="type-cn">复制</div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal" id="modal">
+        <button class="modal-close" id="modal-close">×</button>
+        <div class="modal-kicker">IMPORT / 导入</div>
+        <h2 class="modal-title">把歌单搬进舞台</h2>
+        <p class="modal-sub">从网易云、QQ 音乐或 Spotify 读取歌单信息，再匹配你本地的音频。平台只提供元数据，音频播放遵循你的账号权限与平台条款。</p>
+
+        <div class="tabs" id="import-tabs">
+          <button class="tab active" data-tab="netease">网易云音乐</button>
+          <button class="tab" data-tab="qq">QQ 音乐</button>
+          <button class="tab" data-tab="spotify">Spotify</button>
+          <button class="tab" data-tab="local">本地文件</button>
+        </div>
+
+        <div class="import-pane" id="pane-url">
+          <label class="field-label" for="playlist-url">粘贴歌单链接 / ID</label>
+          <div class="url-row">
+            <input id="playlist-url" type="text" placeholder="https://music.163.com/playlist?id=..." autocomplete="off" />
+            <button class="btn btn-primary" id="btn-fetch-playlist">读取歌单</button>
+          </div>
+          <div class="companion" id="companion-status">
+            <span class="status-dot" id="companion-dot"></span>
+            <span id="companion-text">正在检测本地导入助手…</span>
+          </div>
+          <p class="fineprint">
+            歌单元数据通过本地 Python 助手 <code>pipeline/server.py</code> 读取，默认地址
+            <code>127.0.0.1:8787</code>。未启动时仍可使用内置示例，或直接拖入本地音频。
+          </p>
+        </div>
+
+        <div class="import-pane hidden" id="pane-local">
+          <label class="local-drop" for="file-input">
+            <span class="local-icon">＋</span>
+            <b>选择本地音频</b>
+            <span>支持 MP3 / WAV / FLAC / M4A / OGG</span>
+          </label>
+          <input type="file" id="file-input" accept="audio/*" hidden />
+          <p class="fineprint">建议使用你拥有版权或已获授权的音频。所有分析均在本地完成，不上传服务器。</p>
+        </div>
+
+        <div class="playlist-head">
+          <span>TRACKS</span>
+          <span id="playlist-count">内置示例</span>
+        </div>
+        <div class="playlist" id="playlist"></div>
+      </div>
+    </div>
+
+    <div class="analyzing" id="analyzing">
+      <div class="analyzing-card">
+        <div class="analyzing-kicker">ANALYSIS / 解构中</div>
+        <div class="analyzing-title" id="analyzing-title">正在听这首歌</div>
+        <div class="steps" id="analysis-steps">
+          <span>解码</span><span>节拍</span><span>分轨</span><span>音符</span><span>编排</span>
+        </div>
+        <div class="analyze-progress"><i id="analyze-fill"></i></div>
+        <div class="analyzing-msg" id="analyzing-msg">准备音频…</div>
+        <div class="analyzing-spectrum" id="analyzing-spectrum">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="drop-overlay" id="drop-overlay">
+      <div>
+        <b>DROP IT</b>
+        <span>松手，让这首歌变成一支乐队</span>
+      </div>
+    </div>
+
+    <div class="mv-frame" id="mv-frame">
+      <div class="mv-corner tl"></div><div class="mv-corner tr"></div>
+      <div class="mv-corner bl"></div><div class="mv-corner br"></div>
+      <div class="mv-title" id="mv-title">ECHO / STAGE</div>
+      <div class="mv-caption" id="mv-caption">COPY NIGHT · 120 BPM · A MINOR</div>
+    </div>
+
+    <div class="help" id="help">
+      <span><kbd>Space</kbd> 播放</span>
+      <span><kbd>←</kbd><kbd>→</kbd> 跳转</span>
+      <span><kbd>M</kbd> MV 模式</span>
+      <span><kbd>D</kbd> 导演镜头</span>
+    </div>
+  </div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+﻿import puppeteer from 'puppeteer-core';
+const b = await puppeteer.launch({executablePath:'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',headless:'new',args:['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader'],defaultViewport:{width:1280,height:800}});
+const p = await b.newPage();
+const errs=[]; p.on('pageerror',e=>errs.push(e.message)); p.on('console',m=>{if(m.type()==='error') errs.push(m.text())});
+await p.goto('http://127.0.0.1:8777/web/?t=16.2',{waitUntil:'domcontentloaded'});
+await p.waitForFunction('window.__ECHOSTAGE__?.state?.score',{timeout:30000});
+await new Promise(r=>setTimeout(r,1000));
+console.log(await p.evaluate(()=>({title:document.title, tracks:window.__ECHOSTAGE__.state.score.tracks.length, canvas:[document.querySelector('#stage').width,document.querySelector('#stage').height]})));
+console.log('ERRORS',errs.length?errs:'none');
+await b.close();

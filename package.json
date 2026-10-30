@@ -1,0 +1,31 @@
+{
+  "name": "MusicStage3D",
+  "version": "1.0.0",
+  "description": "EchoStage - 音乐解构与 3D 乐器演出原型",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "python -m http.server 8777 --bind 127.0.0.1",
+    "companion": "python pipeline/server.py",
+    "test:demo": "node tools/analyze-demo.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.7.0",
+      "onFail": "download"
+    }
+  },
+  "type": "module",
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@puppeteer/browsers": "^3.2.6",
+    "puppeteer-core": "^25.16.0",
+    "ws": "^8.22.0"
+  }
+}

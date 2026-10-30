@@ -1,0 +1,14 @@
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+*.log
+.DS_Store
+Thumbs.db
+
+# 第三方 MV 参考截图仅本地研究，不进入公开仓库
+docs/reference/cover.jpg
+docs/reference/first-frame.jpg
+docs/reference/storyboard-0.jpg
+docs/reference/storyboard.json
+docs/reference/crop-*.jpg
