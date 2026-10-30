@@ -19,7 +19,7 @@ const SOFTWARE_RE = /swiftshader|llvmpipe|software|basic render|mesa offscreen/i
 
 const QUALITY_PRESETS = {
   // 默认不压缩分辨率：high 使用设备原生 DPR（最多 2x）。
-  high: { pixelBudget: Infinity, dprCap: 2, bloom: true, shadowEvery: 2, shadowSize: 1024, grain: 0.015 },
+  high: { pixelBudget: Infinity, dprCap: 2, bloom: true, shadowEvery: 3, shadowSize: 2048, grain: 0.015 },
   medium: { pixelBudget: 2_200_000, dprCap: 1.15, bloom: true, shadowEvery: 3, shadowSize: 512, grain: 0.008 },
   low: { pixelBudget: 1_400_000, dprCap: 0.9, bloom: false, shadowEvery: 0, shadowSize: 256, grain: 0.004 },
 };
@@ -525,7 +525,8 @@ export function createStage(canvas) {
       renderer.render(scene, camera);
     } else {
       if (quality === 'high') {
-        renderer.shadowMap.needsUpdate = (shadowTick % 2 === 0);
+        const every = QUALITY_PRESETS[quality].shadowEvery || 1;
+        renderer.shadowMap.needsUpdate = (shadowTick % every === 0);
         shadowTick++;
       } else {
         renderer.shadowMap.needsUpdate = false;
